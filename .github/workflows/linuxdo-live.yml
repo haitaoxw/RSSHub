@@ -1,0 +1,88 @@
+name: LinuxDo browser routing
+
+on:
+    push:
+        branches:
+            - agent/linuxdo-rss-browser-fallback
+        paths:
+            - 'lib/routes/discourse/**'
+            - 'test/routes/discourse/**'
+            - 'docker-compose.linuxdo.yml'
+            - 'Dockerfile'
+            - '.github/workflows/linuxdo-live.yml'
+    workflow_dispatch: {}
+
+permissions:
+    contents: read
+
+jobs:
+    linuxdo-browser-routing:
+        name: LinuxDo route launches Chromium
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - name: Build and start RSSHub with bundled Chromium
+              run: docker compose -f docker-compose.linuxdo.yml up -d --build
+
+            - name: Wait for RSSHub health
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  for i in $(seq 1 60); do
+                    if curl -fsS http://127.0.0.1:1200/healthz >/dev/null; then
+                      exit 0
+                    fi
+                    sleep 2
+                  done
+                  docker compose -f docker-compose.linuxdo.yml logs rsshub
+                  exit 1
+
+            - name: Measure direct Node fetch for diagnostics
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  docker compose -f docker-compose.linuxdo.yml exec -T rsshub node --input-type=module <<'NODE'
+                  const url = 'https://linux.do/c/news/34.rss';
+                  const response = await fetch(url, { redirect: 'follow' });
+                  const body = await response.text();
+                  console.log(JSON.stringify({
+                    client: 'node-fetch',
+                    status: response.status,
+                    contentType: response.headers.get('content-type'),
+                    length: body.length,
+                    head: body.slice(0, 160).replace(/\s+/g, ' '),
+                  }, null, 2));
+                  NODE
+
+            - name: Exercise the real RSSHub LinuxDo route
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  set +e
+                  http_code=$(curl --silent --show-error \
+                    --max-time 60 \
+                    --output /tmp/linuxdo-route-body \
+                    --write-out '%{http_code}' \
+                    http://127.0.0.1:1200/discourse/0/official/c/news/34)
+                  curl_exit=$?
+                  set -e
+
+                  echo "RSSHub curl exit: ${curl_exit}"
+                  echo "RSSHub HTTP status: ${http_code}"
+                  echo "RSSHub response head:"
+                  head -c 500 /tmp/linuxdo-route-body 2>/dev/null || true
+                  echo
+
+            - name: Verify the route actually launched Chromium
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  logs=$(docker compose -f docker-compose.linuxdo.yml logs --no-color rsshub)
+                  printf '%s\n' "$logs" | tail -n 300
+                  printf '%s\n' "$logs" | grep -F '[discourse/official] browser mode launched for https://linux.do/c/news/34.rss'
+
+            - name: Stop containers
+              if: always()
+              run: docker compose -f docker-compose.linuxdo.yml down -v

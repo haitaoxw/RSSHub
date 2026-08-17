@@ -1,5 +1,7 @@
 import type { Data, Route } from '@/types';
 import got from '@/utils/got';
+import logger from '@/utils/logger';
+import { getPlaywrightPage } from '@/utils/playwright';
 import RSSParser from '@/utils/rss-parser';
 
 import { getConfig } from './utils';
@@ -19,7 +21,7 @@ export const route: Route = {
                 description: 'Configure the Discourse environment variables referring to [https://docs.rsshub.app/deploy/config#discourse](https://docs.rsshub.app/deploy/config#discourse).',
             },
         ],
-        requirePuppeteer: false,
+        requirePuppeteer: true,
         antiCrawler: false,
         supportBT: false,
         supportPodcast: false,
@@ -30,21 +32,68 @@ export const route: Route = {
     handler,
 };
 
+const browserHosts = new Set(['linux.do']);
+
+const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
+    const { destroy, page } = await getPlaywrightPage(url, {
+        closeTimeout: 45000,
+        noGoto: true,
+    });
+
+    logger.info(`[discourse/official] browser mode launched for ${url}`);
+
+    try {
+        if (key) {
+            await page.setExtraHTTPHeaders({
+                'User-Api-Key': key,
+            });
+        }
+
+        const response = await page.goto(url, {
+            timeout: 30000,
+            waitUntil: 'domcontentloaded',
+        });
+
+        if (!response) {
+            throw new Error(`Discourse browser mode returned no response for ${url}`);
+        }
+
+        logger.info(`[discourse/official] browser response HTTP ${response.status()} for ${url}`);
+
+        if (!response.ok()) {
+            throw new Error(`Discourse browser mode returned HTTP ${response.status()} for ${url}`);
+        }
+
+        return await response.text();
+    } finally {
+        await destroy();
+    }
+};
+
+export const fetchOfficialRss = async (url: string, key?: string) => {
+    const hostname = new URL(url).hostname.toLowerCase();
+
+    if (browserHosts.has(hostname)) {
+        return fetchOfficialRssWithBrowser(url, key);
+    }
+
+    return (
+        await got(url, {
+            headers: key
+                ? {
+                      'User-Api-Key': key,
+                  }
+                : undefined,
+        })
+    ).data;
+};
+
 async function handler(ctx) {
-    const { link, key } = getConfig(ctx) as unknown as { link: string; key: string };
+    const { link, key } = getConfig(ctx) as unknown as { link: string; key?: string };
     const path = ctx.req.param('path');
 
     const url = `${link}/${path}.rss`;
-
-    const feed = await RSSParser.parseString(
-        (
-            await got(url, {
-                headers: {
-                    'User-Api-Key': key,
-                },
-            })
-        ).data
-    );
+    const feed = await RSSParser.parseString(await fetchOfficialRss(url, key));
 
     feed.items = feed.items.map((e) => ({
         description: e.content,
