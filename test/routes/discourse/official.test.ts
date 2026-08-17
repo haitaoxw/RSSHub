@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { fetchOfficialRss } from '../../../lib/routes/discourse/official';
+
 const { destroyMock, getPlaywrightPageMock, gotMock, responseTextMock, gotoMock, setExtraHTTPHeadersMock } = vi.hoisted(() => ({
     destroyMock: vi.fn(),
     getPlaywrightPageMock: vi.fn(),
@@ -9,15 +11,13 @@ const { destroyMock, getPlaywrightPageMock, gotMock, responseTextMock, gotoMock,
     setExtraHTTPHeadersMock: vi.fn(),
 }));
 
-vi.mock('@/utils/got', () => ({
+vi.mock('../../../lib/utils/got', () => ({
     default: gotMock,
 }));
 
-vi.mock('@/utils/playwright', () => ({
+vi.mock('../../../lib/utils/playwright', () => ({
     getPlaywrightPage: getPlaywrightPageMock,
 }));
-
-import { fetchOfficialRss } from '@/routes/discourse/official';
 
 describe('Discourse official RSS', () => {
     beforeEach(() => {
@@ -66,12 +66,12 @@ describe('Discourse official RSS', () => {
 
         expect(gotMock).not.toHaveBeenCalled();
         expect(getPlaywrightPageMock).toHaveBeenCalledWith('https://linux.do/c/news/34.rss', {
-            closeTimeout: 45_000,
+            closeTimeout: 45000,
             noGoto: true,
         });
         expect(setExtraHTTPHeadersMock).not.toHaveBeenCalled();
         expect(gotoMock).toHaveBeenCalledWith('https://linux.do/c/news/34.rss', {
-            timeout: 30_000,
+            timeout: 30000,
             waitUntil: 'domcontentloaded',
         });
         expect(destroyMock).toHaveBeenCalledOnce();
