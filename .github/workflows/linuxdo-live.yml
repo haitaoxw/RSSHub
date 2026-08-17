@@ -17,7 +17,7 @@ permissions:
 
 jobs:
     linuxdo-browser-routing:
-        name: LinuxDo route launches Chromium
+        name: LinuxDo route returns RSS via Chromium
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:
@@ -56,24 +56,23 @@ jobs:
                   }, null, 2));
                   NODE
 
-            - name: Exercise the real RSSHub LinuxDo route
+            - name: Verify the real RSSHub LinuxDo route
               shell: bash
               run: |
                   set -euo pipefail
-                  set +e
-                  http_code=$(curl --silent --show-error \
+                  http_code=$(curl --silent --show-error --fail-with-body \
                     --max-time 60 \
                     --output /tmp/linuxdo-route-body \
                     --write-out '%{http_code}' \
                     http://127.0.0.1:1200/discourse/0/official/c/news/34)
-                  curl_exit=$?
-                  set -e
 
-                  echo "RSSHub curl exit: ${curl_exit}"
                   echo "RSSHub HTTP status: ${http_code}"
                   echo "RSSHub response head:"
-                  head -c 500 /tmp/linuxdo-route-body 2>/dev/null || true
+                  head -c 500 /tmp/linuxdo-route-body
                   echo
+
+                  test "${http_code}" = "200"
+                  grep -q '<rss' /tmp/linuxdo-route-body
 
             - name: Verify the route actually launched Chromium
               shell: bash
@@ -82,6 +81,7 @@ jobs:
                   logs=$(docker compose -f docker-compose.linuxdo.yml logs --no-color rsshub)
                   printf '%s\n' "$logs" | tail -n 300
                   printf '%s\n' "$logs" | grep -F '[discourse/official] browser mode launched for https://linux.do/c/news/34.rss'
+                  printf '%s\n' "$logs" | grep -F '[discourse/official] browser response HTTP 200 for https://linux.do/c/news/34.rss'
 
             - name: Stop containers
               if: always()
