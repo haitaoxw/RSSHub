@@ -39,11 +39,11 @@ describe('Discourse official RSS', () => {
         });
     });
 
-    it('uses the normal HTTP response without launching Chromium', async () => {
+    it('uses the normal HTTP client for non-linux.do Discourse feeds', async () => {
         gotMock.mockResolvedValue({ data: '<rss>http</rss>' });
 
-        await expect(fetchOfficialRss('https://example.com/latest.rss', 'secret')).resolves.toBe('<rss>http</rss>');
-        expect(gotMock).toHaveBeenCalledWith('https://example.com/latest.rss', {
+        await expect(fetchOfficialRss('https://meta.discourse.org/latest.rss', 'secret')).resolves.toBe('<rss>http</rss>');
+        expect(gotMock).toHaveBeenCalledWith('https://meta.discourse.org/latest.rss', {
             headers: {
                 'User-Api-Key': 'secret',
             },
@@ -51,25 +51,20 @@ describe('Discourse official RSS', () => {
         expect(getPlaywrightPageMock).not.toHaveBeenCalled();
     });
 
-    it('does not send User-Api-Key when the configured key is empty', async () => {
+    it('does not send User-Api-Key when a non-linux.do config has no key', async () => {
         gotMock.mockResolvedValue({ data: '<rss>http</rss>' });
 
-        await fetchOfficialRss('https://example.com/latest.rss', '');
+        await fetchOfficialRss('https://meta.discourse.org/latest.rss', '');
 
-        expect(gotMock).toHaveBeenCalledWith('https://example.com/latest.rss', {
+        expect(gotMock).toHaveBeenCalledWith('https://meta.discourse.org/latest.rss', {
             headers: undefined,
         });
     });
 
-    it('falls back to Chromium when the HTTP request returns 403', async () => {
-        const forbidden = Object.assign(new Error('403 Forbidden'), {
-            response: {
-                status: 403,
-            },
-        });
-        gotMock.mockRejectedValue(forbidden);
-
+    it('always uses Chromium for linux.do without trying the HTTP client first', async () => {
         await expect(fetchOfficialRss('https://linux.do/c/news/34.rss')).resolves.toBe('<rss>browser</rss>');
+
+        expect(gotMock).not.toHaveBeenCalled();
         expect(getPlaywrightPageMock).toHaveBeenCalledWith('https://linux.do/c/news/34.rss', {
             closeTimeout: 45_000,
             noGoto: true,
@@ -82,29 +77,20 @@ describe('Discourse official RSS', () => {
         expect(destroyMock).toHaveBeenCalledOnce();
     });
 
-    it('preserves User-Api-Key in browser fallback', async () => {
-        const forbidden = Object.assign(new Error('403 Forbidden'), {
-            response: {
-                status: 403,
-            },
-        });
-        gotMock.mockRejectedValue(forbidden);
+    it('preserves User-Api-Key when linux.do is fetched in browser mode', async () => {
+        await expect(fetchOfficialRss('https://linux.do/latest.rss', 'secret')).resolves.toBe('<rss>browser</rss>');
 
-        await expect(fetchOfficialRss('https://example.com/latest.rss', 'secret')).resolves.toBe('<rss>browser</rss>');
+        expect(gotMock).not.toHaveBeenCalled();
         expect(setExtraHTTPHeadersMock).toHaveBeenCalledWith({
             'User-Api-Key': 'secret',
         });
     });
 
-    it('keeps the original 403 when the browser fallback is unavailable', async () => {
-        const forbidden = Object.assign(new Error('403 Forbidden'), {
-            response: {
-                status: 403,
-            },
-        });
-        gotMock.mockRejectedValue(forbidden);
-        getPlaywrightPageMock.mockRejectedValue(new Error('Chromium executable not found'));
+    it('propagates browser failures for linux.do', async () => {
+        const browserError = new Error('Chromium executable not found');
+        getPlaywrightPageMock.mockRejectedValue(browserError);
 
-        await expect(fetchOfficialRss('https://example.com/latest.rss')).rejects.toBe(forbidden);
+        await expect(fetchOfficialRss('https://linux.do/latest.rss')).rejects.toBe(browserError);
+        expect(gotMock).not.toHaveBeenCalled();
     });
 });
