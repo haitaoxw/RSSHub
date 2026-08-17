@@ -21,7 +21,7 @@ export const route: Route = {
                 description: 'Configure the Discourse environment variables referring to [https://docs.rsshub.app/deploy/config#discourse](https://docs.rsshub.app/deploy/config#discourse).',
             },
         ],
-        requirePuppeteer: false,
+        requirePuppeteer: true,
         antiCrawler: false,
         supportBT: false,
         supportPodcast: false,
@@ -36,7 +36,7 @@ const browserHosts = new Set(['linux.do']);
 
 const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
     const { destroy, page } = await getPlaywrightPage(url, {
-        closeTimeout: 45_000,
+        closeTimeout: 45000,
         noGoto: true,
     });
 
@@ -50,7 +50,7 @@ const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
         }
 
         const response = await page.goto(url, {
-            timeout: 30_000,
+            timeout: 30000,
             waitUntil: 'domcontentloaded',
         });
 
