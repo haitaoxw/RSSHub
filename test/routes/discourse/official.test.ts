@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { destroyMock, getPlaywrightPageMock, gotMock, responseTextMock, gotoMock } = vi.hoisted(() => ({
+const { destroyMock, getPlaywrightPageMock, gotMock, responseTextMock, gotoMock, setExtraHTTPHeadersMock } = vi.hoisted(() => ({
     destroyMock: vi.fn(),
     getPlaywrightPageMock: vi.fn(),
     gotMock: vi.fn(),
     responseTextMock: vi.fn(),
     gotoMock: vi.fn(),
+    setExtraHTTPHeadersMock: vi.fn(),
 }));
 
 vi.mock('@/utils/got', () => ({
@@ -23,6 +24,7 @@ describe('Discourse official RSS', () => {
         vi.clearAllMocks();
         destroyMock.mockResolvedValue(undefined);
         responseTextMock.mockResolvedValue('<rss>browser</rss>');
+        setExtraHTTPHeadersMock.mockResolvedValue(undefined);
         gotoMock.mockResolvedValue({
             ok: () => true,
             status: () => 200,
@@ -32,6 +34,7 @@ describe('Discourse official RSS', () => {
             destroy: destroyMock,
             page: {
                 goto: gotoMock,
+                setExtraHTTPHeaders: setExtraHTTPHeadersMock,
             },
         });
     });
@@ -71,11 +74,26 @@ describe('Discourse official RSS', () => {
             closeTimeout: 45_000,
             noGoto: true,
         });
+        expect(setExtraHTTPHeadersMock).not.toHaveBeenCalled();
         expect(gotoMock).toHaveBeenCalledWith('https://linux.do/c/news/34.rss', {
             timeout: 30_000,
             waitUntil: 'domcontentloaded',
         });
         expect(destroyMock).toHaveBeenCalledOnce();
+    });
+
+    it('preserves User-Api-Key in browser fallback', async () => {
+        const forbidden = Object.assign(new Error('403 Forbidden'), {
+            response: {
+                status: 403,
+            },
+        });
+        gotMock.mockRejectedValue(forbidden);
+
+        await expect(fetchOfficialRss('https://example.com/latest.rss', 'secret')).resolves.toBe('<rss>browser</rss>');
+        expect(setExtraHTTPHeadersMock).toHaveBeenCalledWith({
+            'User-Api-Key': 'secret',
+        });
     });
 
     it('keeps the original 403 when the browser fallback is unavailable', async () => {
