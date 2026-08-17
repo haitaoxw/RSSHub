@@ -32,13 +32,15 @@ export const route: Route = {
     handler,
 };
 
-const getResponseStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status;
+const browserHosts = new Set(['linux.do']);
 
 const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
     const { destroy, page } = await getPlaywrightPage(url, {
         closeTimeout: 45_000,
         noGoto: true,
     });
+
+    logger.info(`[discourse/official] browser mode launched for ${url}`);
 
     try {
         if (key) {
@@ -56,6 +58,8 @@ const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
             throw new Error(`Discourse browser mode returned no response for ${url}`);
         }
 
+        logger.info(`[discourse/official] browser response HTTP ${response.status()} for ${url}`);
+
         if (!response.ok()) {
             throw new Error(`Discourse browser mode returned HTTP ${response.status()} for ${url}`);
         }
@@ -67,30 +71,21 @@ const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
 };
 
 export const fetchOfficialRss = async (url: string, key?: string) => {
-    try {
-        return (
-            await got(url, {
-                headers: key
-                    ? {
-                          'User-Api-Key': key,
-                      }
-                    : undefined,
-            })
-        ).data;
-    } catch (error) {
-        if (getResponseStatus(error) !== 403) {
-            throw error;
-        }
+    const hostname = new URL(url).hostname.toLowerCase();
 
-        logger.warn(`[discourse/official] HTTP request returned 403, falling back to browser mode: ${url}`);
-
-        try {
-            return await fetchOfficialRssWithBrowser(url, key);
-        } catch (browserError) {
-            logger.warn(`[discourse/official] browser fallback failed for ${url}: ${browserError}`);
-            throw error;
-        }
+    if (browserHosts.has(hostname)) {
+        return fetchOfficialRssWithBrowser(url, key);
     }
+
+    return (
+        await got(url, {
+            headers: key
+                ? {
+                      'User-Api-Key': key,
+                  }
+                : undefined,
+        })
+    ).data;
 };
 
 async function handler(ctx) {
