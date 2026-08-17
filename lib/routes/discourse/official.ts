@@ -34,13 +34,19 @@ export const route: Route = {
 
 const getResponseStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status;
 
-const fetchOfficialRssWithBrowser = async (url: string) => {
+const fetchOfficialRssWithBrowser = async (url: string, key?: string) => {
     const { destroy, page } = await getPlaywrightPage(url, {
         closeTimeout: 45_000,
         noGoto: true,
     });
 
     try {
+        if (key) {
+            await page.setExtraHTTPHeaders({
+                'User-Api-Key': key,
+            });
+        }
+
         const response = await page.goto(url, {
             timeout: 30_000,
             waitUntil: 'domcontentloaded',
@@ -79,7 +85,7 @@ export const fetchOfficialRss = async (url: string, key?: string) => {
         logger.warn(`[discourse/official] HTTP request returned 403, falling back to browser mode: ${url}`);
 
         try {
-            return await fetchOfficialRssWithBrowser(url);
+            return await fetchOfficialRssWithBrowser(url, key);
         } catch (browserError) {
             logger.warn(`[discourse/official] browser fallback failed for ${url}: ${browserError}`);
             throw error;
